@@ -11,7 +11,7 @@ Systematically read and understand a codebase, producing a set of verified cogni
 
 The core mechanism: a closed-book exam verification loop ensures generated skills are genuinely comprehensive, not shallow summaries.
 
-**REQUIRED SUB-SKILL:** Use `superpowers:writing-skills` for skill file formatting conventions (Agent A invokes this when generating module skills). Install superpowers from https://github.com/obra/superpowers following your platform's plugin/skill installation method.
+**Skill authoring:** Use the host agent's built-in skill creator or authoring guidance when available. Otherwise, create skills directly using the templates in this workflow: a `SKILL.md` with YAML `name` and `description`, a focused Markdown body, and relative links to supporting files. Apply this to both module skills and the global index. The ABC loop below validates the generated knowledge.
 
 ## Usage
 
@@ -188,4 +188,4 @@ Skip this phase if the source was a local path (we never cloned anything).
 - **Agent isolation is critical** — each agent's prompt strictly defines what it can read
 - **Skills must be self-sufficient** — the verification loop exists to ensure this
 - **Track progress** — every module is a task, updated as it progresses through phases
-- **Format via writing-skills** — Agent A follows `superpowers:writing-skills` formatting conventions (frontmatter, CSO description, directory structure) but does NOT run the full writing-skills TDD cycle
+- **Skill formatting** — follow available native authoring guidance or the included templates; check frontmatter and supporting-file links before verification

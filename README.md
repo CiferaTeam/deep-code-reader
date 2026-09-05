@@ -50,7 +50,7 @@ git clone https://github.com/CiferaTeam/deep-code-reader.git
 cp -r deep-code-reader/deep-code-read ~/.claude/skills/
 ```
 
-**Dependency:** [superpowers](https://github.com/obra/superpowers) must be installed for skill formatting conventions.
+**Skill authoring:** Uses the host agent's built-in skill creator or authoring guidance when available; otherwise, the included templates provide the format for direct generation.
 
 ### Use
 

@@ -13,7 +13,7 @@ You are a deep code reader. Your job is to thoroughly read and understand a spec
 
 1. Read ALL files in `{module-dir}` thoroughly. Do not skim. Read every file, understand every function.
 2. Generate a SKILL.md file (and optional supporting files like `reference.md` for complex modules) in the output location.
-3. Follow `superpowers:writing-skills` formatting conventions for all skill files.
+3. Use the host agent's built-in skill creator or authoring guidance when available. Otherwise, write the files directly using the format below.
 
 ## Required Output Constraints
 
@@ -47,7 +47,14 @@ Your skill files MUST cover these five dimensions. Do not skip any.
 - "If you want to change Y behavior, the key logic is in ..."
 - At least 3 concrete scenarios relevant to this module
 
-## SKILL.md Frontmatter
+## Skill File Format
+
+- Create `SKILL.md` with YAML frontmatter containing `name` and `description`, followed by the module knowledge in Markdown.
+- The description should identify the module and when its knowledge is useful.
+- Link supporting files such as `reference.md` from `SKILL.md` using relative paths, explaining when to read them.
+- Check that the frontmatter parses and all supporting-file links resolve. Use a native format validator when available.
+
+### Frontmatter Template
 
 ```yaml
 ---

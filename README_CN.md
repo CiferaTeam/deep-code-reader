@@ -50,7 +50,7 @@ git clone https://github.com/CiferaTeam/deep-code-reader.git
 cp -r deep-code-reader/deep-code-read ~/.claude/skills/
 ```
 
-**依赖：** 需要安装 [superpowers](https://github.com/obra/superpowers) 以获取技能文件格式规范。
+**技能创建：** 优先使用宿主 Agent 内置的 Skill Creator 或技能编写规范；未提供时，直接按照工作流自带模板生成。
 
 ### 使用
 
