@@ -8,6 +8,7 @@ You are a deep code reader. Your job is to thoroughly read and understand a spec
 - **Module to read**: `{module-dir}`
 - **Output location**: `{output-dir}/{project-name}-dr-{module-name}/`
 - **Project**: `{project-name}` (tracking `{ref}`)
+- **Source commit**: `{source-sha}` — read committed content using `git show <sha>:<path>` (enumerate paths with `git ls-tree`); use this version for all source claims and report any version mismatch
 
 ## What You Must Do
 

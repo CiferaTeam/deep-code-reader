@@ -1,104 +1,84 @@
 # Agent B — Question Generator
 
-You are a question generator. Your job is to read a module's source code and generate questions that test whether a skill document truly captures the module's knowledge.
+Read a module's source and produce evidence-backed questions that test whether generated knowledge is useful for querying and reference.
 
-## Your Scope
+## Scope and Inputs
 
-- **Module source code**: `{module-dir}`
-- **Module name**: `{module-name}`
+- **Source repo:** `{source-dir}`
+- **Module:** `{module-dir}` (`{module-name}`)
+- **Source commit:** `{source-sha}`
+- **Mode:** `{mode}` (`regression` or `holdout`)
+- **Previous questions (IDs and text only):**
 
-## CRITICAL ACCESS RULES
+{previous_questions}
 
-- You MUST read source code files in `{module-dir}`
-- You MUST NOT read any files in directories matching `*-dr-*` patterns
-- You MUST NOT read any SKILL.md files outside the source code
-- Your questions must come purely from reading the code, uninfluenced by any skill document
+## Access Rules
 
-## What You Must Produce
+- Read the module source from committed Git objects at the supplied commit, using `git show <sha>:<path>` and `git ls-tree` to enumerate paths. Cite line numbers from that committed content. Follow relevant callers, definitions, tests, and documentation within the source repo when needed to establish behavior or constraints.
+- Keep generated skills, previous answer keys, C's answers, scores, and repair feedback out of your context. Report contamination if any are supplied.
+- Derive questions and keys from source evidence. Treat design intent as established only when documented; label inferences and keep them out of required facts.
 
-Return a JSON object with exactly two arrays:
+## Question Selection
+
+- **Regression, no previous questions:** generate 5–8 questions covering distinct mechanisms, boundary/error cases, and integration contracts.
+- **Regression, previous questions supplied:** generate 3–5 new questions covering additional knowledge. The coordinator reruns the entire old bank separately.
+- **Holdout:** generate 5–8 new practical queries after the candidate has been frozen. Test how mechanisms work, their limitations, failure conditions, and when an API or pattern is applicable. Prior question text is supplied solely to avoid overlap. Test distinct cases; paraphrases and requests for the same underlying fact do not count as new questions.
+- Prefer useful behaviors and conditions over identifier recall. Keep questions answerable without embedding the answer or a source excerpt in the question.
+
+## Blocker Response
+
+If forbidden context was supplied or the required source is unavailable, stop and return this object instead of the normal question output:
+
+```json
+{"status": "blocked", "reason": "context_contamination", "detail": "Describe the forbidden input without repeating its contents."}
+```
+
+Use `source_unavailable` as the reason when the source commit or necessary evidence cannot be accessed.
+
+## Output
+
+On success, return a JSON object with exactly these two arrays. The coordinator assigns question IDs after validation.
 
 ```json
 {
   "verification": [
     {
       "question": "...",
-      "answer_key": "...",
-      "required_facts": ["fact 1 that MUST appear in the answer", "fact 2", "..."],
+      "answer_key": "A concise explanation of the behavior and its conditions.",
+      "required_facts": [
+        {
+          "fact": "A specific behavior, condition, or constraint required for a correct answer.",
+          "evidence": [
+            {
+              "path": "src/module.ext",
+              "start_line": 10,
+              "end_line": 18,
+              "excerpt": "Exact supporting text from the source at the supplied commit."
+            }
+          ]
+        }
+      ],
+      "topic": "A short description of the behavior being tested",
       "difficulty": "detail|logic|integration"
     }
   ],
   "recommended": [
     {
       "question": "...",
-      "perspective": "usage|modification|understanding"
+      "perspective": "usage|limitations|understanding"
     }
   ]
 }
 ```
 
-## Iteration Mode
+## Evidence Requirements
 
-If `{previous_questions}` is provided, you are in a re-test iteration. You MUST:
+- Each question has 2–5 concrete required facts. Each fact includes at least one source citation: repo-relative path, one-based inclusive line range, and exact excerpt.
+- Cite enough context to establish conditions and exceptions. A symbol's existence alone does not prove its runtime behavior. Multi-file claims need evidence from the relevant files.
+- Answer keys should be 2–5 sentences, supported by those same facts and citations. Include relevant qualifications rather than generalizing from one code path.
+- For integration questions, inspect actual callers/registrations as needed. For absence or impossibility claims, establish the relevant complete scope or narrow the question.
+- The coordinator will independently check the evidence before using the question. If the source version or evidence is unavailable, report the blocker rather than inventing citations.
 
-1. **Re-verify failed areas**: generate 1-2 questions about the same TOPICS that previously failed, but phrase them differently (not the same question verbatim)
-2. **Append new questions**: generate 3-5 entirely NEW questions covering areas NOT tested in any previous round
-3. Do NOT repeat any question from `{previous_questions}` verbatim
+## Recommended Questions
 
-Previous questions (if any):
-{previous_questions}
-
-If `{previous_questions}` is empty or not provided, this is the first round — generate a fresh set as described below.
-
-## Verification Questions (5-8 questions per round)
-
-These test whether the skill document captured specific, concrete knowledge. Each question MUST have an answer key derived directly from the source code.
-
-**Question types to include:**
-
-1. **Detail questions** (2-3): Ask about specific implementation details
-   - "What data structure does `{function}` use to store X?"
-   - "What happens when `{function}` receives an invalid input?"
-   - "What is the default value of X in the config?"
-
-2. **Logic questions** (2-3): Ask about design decisions and reasoning
-   - "Why does this module use X pattern instead of Y?"
-   - "What is the error handling strategy in this module?"
-   - "How does this module handle concurrent access?"
-
-3. **Integration questions** (1-2): Ask about how this module connects to others
-   - "What interface does this module expose for external callers?"
-   - "What events/hooks does this module emit or listen to?"
-
-**Answer key rules:**
-- Each answer key must be 2-5 sentences
-- Must reference specific function names, file paths, or type names
-- Must be verifiable by reading the source code
-
-**Required facts rules:**
-- Each question must have 2-5 required facts
-- Each fact is a specific, verifiable piece of information (function name, file path, behavior, type name)
-- These are the pass/fail criteria: Agent C's answer must cover ALL required facts to pass
-- Facts should be concrete and unambiguous — not "handles errors well" but "calls handleError() in src/hooks/error.ts"
-
-## Recommended Questions (3-5 questions)
-
-These are for the human user during the acceptance phase. They should be DIFFERENT from verification questions — focused on practical usage and modification, not implementation trivia.
-
-**Perspectives to cover:**
-
-1. **Usage**: "How would I use this module to accomplish X?"
-2. **Modification**: "If I wanted to add a new type of X, what would I need to change?"
-3. **Understanding**: "What is the overall philosophy behind how this module handles X?"
-
-Recommended questions do NOT need answer keys.
-
-## The Two Sets Must Not Overlap
-
-Verification questions test factual recall. Recommended questions test practical understanding. Do not put the same question in both sets.
-
-## Quality Rules
-
-- Questions must be answerable from the source code (don't ask about undocumented intentions)
-- Questions should target knowledge that matters for working with this module, not obscure trivia
-- Each question should test a distinct aspect — no redundant questions
+In regression mode, return 3–5 additional questions for human exploration, distinct from scored questions and focused on usage, limitations, and understanding. These have no answer keys and are not verification evidence. In holdout mode, return `recommended: []`.

@@ -9,7 +9,7 @@ homepage: https://github.com/CiferaTeam/deep-code-reader
 
 Systematically read and understand a codebase, producing a set of verified cognitive skills that capture deep knowledge — module capabilities, design logic, data structures, state flow, and modification guides.
 
-The core mechanism: a closed-book exam verification loop ensures generated skills are genuinely comprehensive, not shallow summaries.
+The core mechanism: evidence-checked questions, cumulative closed-book regression, and a fresh final exam test the generated knowledge. Passing establishes coverage of the tested questions for the recorded source version.
 
 **Skill authoring:** Use the host agent's built-in skill creator or authoring guidance when available. Otherwise, create skills directly using the templates in this workflow: a `SKILL.md` with YAML `name` and `description`, a focused Markdown body, and relative links to supporting files. Apply this to both module skills and the global index. The ABC loop below validates the generated knowledge.
 
@@ -59,7 +59,7 @@ You MUST follow these phases in order. Track progress across modules using your 
 
 ### Phase 3: Deep Read (Agent A)
 
-For each selected module, dispatch a subagent with the prompt template from `agent-a-prompt.md`.
+Record the confirmed source commit with `git rev-parse HEAD` as `{source-sha}`. Read source content from that commit (for example, `git ls-tree -r --name-only <sha>` and `git show <sha>:<path>`), including evidence checked during verification. For each selected module, dispatch a subagent with the prompt template from `agent-a-prompt.md`.
 
 **Subagent dispatch parameters:**
 - `prompt`: rendered `agent-a-prompt.md` with variables filled in
@@ -72,70 +72,67 @@ For each selected module, dispatch a subagent with the prompt template from `age
 - `{project-name}`: extracted project name
 - `{module-name}`: the module name
 - `{ref}`: the tracked tag/branch
+- `{source-sha}`: the recorded source commit, also used for verification
 
 After Agent A completes, verify the skill files were written to `{output-dir}/{project-name}-dr-{module-name}/`. Update the module's task status.
 
 ### Phase 4: Verify (ABC Loop)
 
-For each module that has generated skills, run the verification cycle:
+For each module, run at most **3 repair rounds**, including the initial candidate. A round tests the complete regression bank and, if that passes, a fresh final exam against the same frozen candidate.
 
-**Step 1 — Agent B (question generation):**
+**Setup — evidence and isolation:**
 
-Dispatch a subagent with `agent-b-prompt.md`, using a lightweight/smaller model (e.g., Haiku-class).
+- Record the source commit SHA used by A and B. If the source changes during verification, stop and regenerate against a consistent version.
+- Keep a per-module verification record outside all generated skill directories, under `{output-dir}/.deep-code-read/{project-name}/{run-id}/{module-name}/`, with a unique run ID. Save question IDs, validated keys and source evidence, rejected questions and reasons, C's answers, grading decisions, round numbers, and candidate file hashes. Keep answer keys out of published skills.
+- Start B and C in fresh contexts without inherited conversation, source excerpts, answer keys, or earlier answers. B receives source access; C receives only the candidate skill files and question-only input. Record isolation as `enforced` (scoped read access), `observed` (complete tool/read logs checked for allowed inputs), or `prompt_only` (instructions without independently checkable access). Treat any observed out-of-scope read as contamination. For either agent, accept a blocker response shaped as `{"status":"blocked","reason":"context_contamination|source_unavailable","detail":"..."}` instead of its normal output. Retry contamination once in a fresh context, then stop as blocked if it recurs. Source-unavailable blockers stop verification for that module; blocker responses are never graded or treated as malformed answers.
+- Freeze the candidate during each round: record hashes of every skill/supporting file and check them after both exams. Any edit invalidates that round's results; test the changed candidate in the next round.
 
-**Subagent dispatch parameters:**
-- `prompt`: rendered `agent-b-prompt.md`
-- `model`: a smaller, cheaper model — the weaker the better (if it catches gaps, those gaps are real)
-- `description`: "Generate questions for {module-name}"
+**Step 1 — Build and validate the regression bank:**
 
-**Variables:**
-- `{source-dir}`, `{module-dir}`, `{module-name}`
-- `{previous_questions}`: empty string for the first round
+Dispatch `agent-b-prompt.md` using a model capable of accurately tracing the module's code; choose cost based on demonstrated accuracy.
 
-Agent B returns two sets:
-- Verification questions with answer keys (JSON array)
-- Recommended questions for user (JSON array)
+Fill these variables:
+- `{source-dir}`, `{module-dir}`, `{module-name}`, `{source-sha}`
+- `{mode}`: `regression`
+- `{previous_questions}`: JSON objects containing only `id` and `question` for all prior questions; `[]` in the first round
 
-Save the recommended questions (keep in context for Phase 6). Accumulate all verification questions asked so far across rounds.
+B returns `verification` and `recommended` arrays. The coordinator assigns stable IDs to new questions and retains the recommended questions for Phase 6. B supplies 5–8 initial questions or 3–5 additions in later rounds. **The coordinator retains every previously validated question, including previously passing and failed final-exam questions. B's new output extends this bank; it never replaces it.**
 
-**Step 2 — Agent C (closed-book answer):**
+Before admitting a question, the coordinator reads the cited source ranges, relevant conditions/call sites, and checks every required fact and the answer key against `{source-sha}`. Resolve semantic ambiguities and inferred design intent before grading. Correct an erroneous key only from source evidence and record the correction. Reject invalid questions with reasons and request valid replacements to meet the round's count; permit one replacement request, then stop as blocked if the question set remains invalid. Never turn an invalid question into a skill failure or silently remove a previously failed question to obtain a pass. Replacements receive new IDs; retain the rejected IDs and reasons. Any key or question correction invalidates its prior grade; have C answer changed questions afresh before deciding the exam result.
 
-Dispatch a subagent with `agent-c-prompt.md`.
+**Step 2 — C answers the complete bank:**
 
-**Subagent dispatch parameters:**
-- `prompt`: rendered `agent-c-prompt.md` with verification questions embedded
-- `description`: "Verify skills for {module-name}"
-
-**Variables:**
+Dispatch `agent-c-prompt.md` in a fresh context with:
 - `{skill-dir}`: `{output-dir}/{project-name}-dr-{module-name}/`
-- `{questions}`: the verification questions from Agent B (without answer keys)
+- `{module-name}`
+- `{questions}`: a JSON array projected to **exactly `id` and `question`** from the entire validated regression bank
 
-Agent C returns answers to each question.
+Keep `answer_key`, `required_facts`, source evidence, grading notes, and prior answers private to the coordinator. C must return exactly one answer per supplied ID. Missing, duplicate, or unknown IDs are an invalid response, not a pass; allow one format retry in a fresh context, then stop as blocked if still malformed.
 
-**Step 3 — Evaluate:**
+**Step 3 — Grade against checked evidence:**
 
-For each question, check Agent C's answer against Agent B's `required_facts` list:
-- An answer PASSES if it covers ALL required facts (exact match or semantic equivalent)
-- An answer FAILS if it misses any required fact
-- This is an objective check, not a subjective judgment
+The coordinator compares each answer with the validated required facts and verifies C's skill citations. Semantic grading is a reasoned judgment: record which facts are covered, missing, or contradicted and why.
 
-**Step 4 — Loop or proceed:**
+- **PASS:** all required facts are supported by the candidate, with no materially incorrect or contradictory claims in the answer.
+- **FAIL:** a required fact is missing, the answer contradicts the source, adds a materially false claim, lacks supporting skill evidence, or is `CANNOT_ANSWER`. Correct keywords alone do not establish a pass.
+- **DISPUTED:** the question or key is ambiguous or lacks adequate source support. Resolve it from source evidence before scoring; apply the bounded correction/replacement procedure in Step 1. An unresolved dispute blocks verification.
 
-**HARD RULE: You MUST continue looping until 100% of verification questions pass OR you have completed exactly 3 rounds. There is NO early exit. A pass rate of 99% is still a failure — loop again.**
+Report `passed / all valid questions` separately for regression and final exams. An empty exam cannot pass. Invalid, replaced, and disputed questions remain visible in the record.
 
-- 100% pass → module verified, update task, move to next module
-- ANY question fails (even one) → you MUST continue to the next round:
-  1. Collect failed questions with: the question, B's answer key, C's failed answer
-  2. Feed these back to Agent A: dispatch again with supplementary instructions to improve the skill based on the gaps
-  3. Re-run Agent B and Agent C, passing ALL previous questions (from all rounds) as `{previous_questions}` so B generates new questions instead of repeating old ones
-  4. Evaluate again — repeat until 100% or 3 rounds completed
-- **After exactly 3 rounds with failures remaining** → show the unresolved questions and pass rates to the user for judgment. Do NOT silently move on.
+**Step 4 — Frozen-candidate final exam:**
 
-**Do NOT rationalize stopping early.** "Good enough", "most questions passed", "diminishing returns" are not valid reasons to skip a round. The loop exists to catch gaps — use all 3 rounds if needed.
+Only after the complete regression bank passes, keep the same candidate frozen and dispatch a **new B** with `{mode}` = `holdout`. Provide source scope, source SHA, and prior question IDs/text only for avoiding overlap. Keep candidate skills, earlier keys, answers, scores, and repair feedback out of B's context.
+
+B generates 5–8 new questions about useful reference knowledge: mechanisms, limits, failure conditions, and when a pattern or API applies. Rephrasing an existing question or testing the same required fact with new wording does not count as a new case. The coordinator validates the keys and checks overlap before a fresh C answers this exam, using Steps 1–3. Keep the final questions and keys away from A until grading is complete.
+
+- **All regression and final questions pass, candidate hashes unchanged:** mark the module `verified` for that candidate and source SHA when isolation is `enforced` or `observed`; with `prompt_only` isolation, mark `partial_validated` and report that closed-book isolation could not be independently checked. Record both scores and the tested topics; this is sampled knowledge verification, not proof of exhaustive coverage.
+- **Any valid question fails in either exam:** mark the candidate unverified. Append the entire validated final exam to the regression bank if one was attempted. If the current round is below 3, give A the failed questions, checked source evidence/keys, and C's answers to repair the skills. In the next round, rerun the complete bank and use a new final exam after regression passes. At round 3, transition directly to `needs_review` without dispatching another repair.
+- **Candidate edits before round 3:** discard that round's grades and continue with the changed candidate in the next round, retaining every validated question from the discarded exams as regression material.
+- **Failures or candidate edits at round 3:** mark `needs_review`, present the outstanding gaps and scores, and stop. Never reuse a final exam exposed to A as independent acceptance evidence or start another three-round cycle automatically.
 
 ### Phase 5: Generate Global Index
 
-After all modules are verified, generate `{output-dir}/{project-name}-dr/SKILL.md`:
+For `blocked`, `needs_review`, or `partial_validated` modules, present their status and evidence to the user and stop before claiming completion. After all selected modules are verified, generate `{output-dir}/{project-name}-dr/SKILL.md`:
 
 ```yaml
 ---
@@ -149,6 +146,7 @@ Content must include:
 - Version: tag or commit hash
 - Tracked branch
 - Generation timestamp
+- Each module's verified source SHA, candidate hashes, isolation level, regression/final scores, and tested topics from Phase 4; label cross-module scenarios synthesized here as unverified by the module exams
 - Each module's one-line purpose (from the module skills)
 - Inter-module dependency relationships (from Phase 2 scan)
 - Cross-module scenario entry guides: for common operations that span multiple modules, describe which modules are involved and in what order
@@ -185,7 +183,7 @@ Skip this phase if the source was a local path (we never cloned anything).
 ## Key Rules
 
 - **Never modify source code** — the source repo is read-only throughout
-- **Agent isolation is critical** — each agent's prompt strictly defines what it can read
-- **Skills must be self-sufficient** — the verification loop exists to ensure this
+- **Agent isolation is critical** — B and C use fresh contexts with the scoped inputs defined in Phase 4
+- **Skills must be self-sufficient** — answers must be supported by the generated documents; report tested coverage and unresolved gaps
 - **Track progress** — every module is a task, updated as it progresses through phases
 - **Skill formatting** — follow available native authoring guidance or the included templates; check frontmatter and supporting-file links before verification

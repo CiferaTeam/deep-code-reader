@@ -2,7 +2,7 @@
 
 [中文版](README_CN.md)
 
-**Turn any codebase into verified, reusable AI skills — not summaries, not RAG, but genuine comprehension.**
+**Turn codebases into reusable AI knowledge skills, grounded in source evidence and tested for querying and reference.**
 
 ---
 
@@ -26,12 +26,13 @@ Scan repo → identify modules & dependencies → you pick what to read
          Agent B (reads code, no skill) → exam questions + answer keys
          Agent C (reads skill, no code) → takes the exam
                           ↓
-              Pass? → Next module / Fail? → improve skill → re-exam
+              Regression pass → fresh final exam → next module
+              Either exam fails → repair → cumulative re-test
                           ↓
               Global index + Q&A acceptance with you
 ```
 
-The tool first scans the repo structure to map out modules and their dependencies, then lets you choose which modules to deep-read. Each module goes through a thorough reading phase followed by a **closed-book exam** — if Agent C can answer detailed questions using ONLY the generated skills, without touching source code, the skills are genuinely comprehensive. If not, they get improved until they are.
+The tool scans the repo structure and dependencies, then lets you choose modules to read. Each module produces skills tested through **cumulative closed-book regression and a fresh final exam**. Source evidence is checked before grading. Passing records coverage of the tested questions at a specific source version; remaining gaps are reported after at most three rounds.
 
 ## Let Your Tokens Learn While You Sleep
 
@@ -104,10 +105,14 @@ That's it. The tool handles everything automatically, pausing only twice for you
 This is what makes deep-code-reader different from "just another code summarizer":
 
 - **Agent A** (primary model): reads source code, generates skill files
-- **Agent B** (lightweight model): reads source code WITHOUT seeing skills, generates exam questions with answer keys and required facts
+- **Agent B** (model selected for accurate code reading): reads source code WITHOUT seeing skills, generates questions with answer keys and source evidence for every required fact
 - **Agent C** (primary model): reads ONLY skill files, takes the exam without source code access
 
-Each iteration, B adds **new questions** covering untested areas — so A can't just "teach to the test". Max 3 rounds per module; unresolved gaps are surfaced to you for judgment.
+The coordinator checks answer keys against cited source code before grading. Each round tests the **entire accumulated question bank**, including earlier successes, plus new questions. Answers must cover the required facts without materially false or contradictory claims.
+
+After regression passes, the documents stay frozen while a fresh B generates an **independent final exam** about mechanisms, limitations, and practical reference scenarios. A fresh C receives only the skills and question text/IDs. Both exams must pass for the same document version. Failed final exams join the regression bank before repairs; the next final exam uses new questions.
+
+Each module has at most 3 rounds, including the initial candidate. Unresolved gaps or evidence disputes remain visible and prevent verification. Records include the source commit, document hashes, source evidence, separate exam scores, and the isolation level. Runs relying solely on prompt-based isolation are marked `partial_validated`; `verified` requires scoped access or checked access logs. Passing establishes the tested coverage, rather than exhaustive understanding.
 
 ## After Generation
 
